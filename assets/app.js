@@ -528,7 +528,7 @@ window.addEventListener("beforeprint", () => {
 /* ---------------- optional AI polish (bring your own key) ---------------- */
 const AI_PRESETS = {
   openai: { endpoint: "https://api.openai.com/v1/chat/completions", model: "gpt-4o-mini" },
-  gemini: { endpoint: "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions", model: "gemini-2.5-flash" },
+  gemini: { endpoint: "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions", model: "gemini-3.8-flash" },
   groq:   { endpoint: "https://api.groq.com/openai/v1/chat/completions", model: "llama-3.3-70b-versatile" },
 };
 
@@ -539,7 +539,13 @@ async function aiChat(prompt) {
   $("ai-key").value = "";
   const endpoint = $("ai-endpoint").value.trim() || AI_PRESETS.openai.endpoint;
   localStorage.setItem("nextforge-ai-endpoint", endpoint);
-  const model = $("ai-model").value.trim() || "gpt-4o-mini";
+  let model = $("ai-model").value.trim() || "gpt-4o-mini";
+  if (model === "gemini-2.5-flash") {
+    // Google retired gemini-2.5-flash for new API keys — remap to its successor
+    // and update the visible field so the user sees the change.
+    model = "gemini-3.8-flash";
+    $("ai-model").value = model;
+  }
   const res = await fetch(endpoint, {
     method: "POST",
     headers: { "Content-Type": "application/json", "Authorization": "Bearer " + key },
