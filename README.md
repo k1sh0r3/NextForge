@@ -3,7 +3,7 @@
 A client-side resume builder and ATS tailoring tool. Upload your resume, paste a job
 description, and get a tailored, ATS-scored resume you can edit in the browser and export as PDF.
 
-**Live site:** enable GitHub Pages on this repo (Settings → Pages → Deploy from branch → `main` / `/(root)`), then visit `https://<user>.github.io/NextForge`.
+**Live site:** https://k1sh0r3.github.io/NextForge/
 
 ## How it works
 
