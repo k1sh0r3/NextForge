@@ -532,7 +532,7 @@ const AI_PRESETS = {
   groq:   { endpoint: "https://api.groq.com/openai/v1/chat/completions", model: "llama-3.3-70b-versatile" },
 };
 
-async function aiChat(prompt) {
+async function aiChat(prompt, step) {
   const key = $("ai-key").value.trim() || localStorage.getItem("nextforge-ai-key") || "";
   if (!key) throw new Error("No API key found — paste your key in the AI polish box (step 3).");
   localStorage.setItem("nextforge-ai-key", key);
@@ -546,25 +546,42 @@ async function aiChat(prompt) {
     model = "gemini-3.8-flash";
     $("ai-model").value = model;
   }
-  const res = await fetch(endpoint, {
-    method: "POST",
-    headers: { "Content-Type": "application/json", "Authorization": "Bearer " + key },
-    body: JSON.stringify({ model, temperature: 0.4,
-      messages: [{ role: "user", content: prompt }] }),
-  });
-  if (!res.ok) {
-    let detail = "";
-    try { detail = (await res.text()).slice(0, 300); } catch (e) { /* ignore */ }
+  const body = JSON.stringify({ model, temperature: 0.4,
+    messages: [{ role: "user", content: prompt }] });
+  // The provider can be briefly overloaded (503) or rate-limited (429) —
+  // retry those with backoff instead of failing the step outright.
+  let lastErr = new Error("request failed");
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    let res = null;
     try {
-      const j = JSON.parse(detail);
-      detail = (j.error && j.error.message) || j.message || detail;
-    } catch (e) { /* not JSON, keep raw */ }
-    throw new Error("API error " + res.status + (detail ? ": " + detail : ""));
+      res = await fetch(endpoint, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "Authorization": "Bearer " + key },
+        body,
+      });
+    } catch (e) { lastErr = e; }
+    if (res && res.ok) {
+      const data = await res.json();
+      const content = data && data.choices && data.choices[0] && data.choices[0].message
+        ? data.choices[0].message.content : "";
+      return (content || "").trim();
+    }
+    if (res) {
+      let detail = "";
+      try { detail = (await res.text()).slice(0, 300); } catch (e) { /* ignore */ }
+      try {
+        const j = JSON.parse(detail);
+        detail = (j.error && j.error.message) || j.message || detail;
+      } catch (e) { /* not JSON, keep raw */ }
+      lastErr = new Error("API error " + res.status + (detail ? ": " + detail : ""));
+      if (res.status !== 503 && res.status !== 429) throw lastErr;
+    }
+    if (attempt < 3) {
+      if (step) aiStatus(step + ": model is busy, retrying…");
+      await new Promise(r => setTimeout(r, attempt * 4000));
+    }
   }
-  const data = await res.json();
-  const content = data && data.choices && data.choices[0] && data.choices[0].message
-    ? data.choices[0].message.content : "";
-  return (content || "").trim();
+  throw lastErr;
 }
 
 const jdContext = () => $("jd-input").value.trim().slice(0, 3000);
@@ -588,7 +605,7 @@ async function aiRewriteSummary() {
     `CURRENT SUMMARY:\n${state.resume.summary || "(none)"}\n\n` +
     `JOB DESCRIPTION:\n${jdContext()}`;
   try {
-    const out = await aiChat(prompt);
+    const out = await aiChat(prompt, "Summary");
     if (out == null) return false;
     state.resume.summary = out.replace(/^["'“”]+|["'“”]+$/g, "").slice(0, 600);
     renderDoc(); persist(); updateScore();
@@ -615,7 +632,7 @@ async function aiRewriteBullets() {
       `Return ONLY the rewritten bullets, one per line, no numbering, no extra text.\n\n` +
       `BULLETS:\n${e.bullets.join("\n")}\n\nJOB DESCRIPTION:\n${jd}`;
     try {
-      const out = await aiChat(prompt);
+      const out = await aiChat(prompt, "Bullets");
       if (out == null) return false;
       const lines = out.split("\n")
         .map(l => l.replace(/^[-•*\d.)\s]+/, "").trim()).filter(Boolean);
@@ -637,7 +654,7 @@ async function aiOptimizeSkills() {
     `CURRENT SKILLS:\n${state.resume.skills.join(", ")}\n\n` +
     `JOB DESCRIPTION:\n${jdContext()}`;
   try {
-    const out = await aiChat(prompt);
+    const out = await aiChat(prompt, "Skills");
     if (out == null) return false;
     const seen = new Set(), skills = [];
     for (const raw of out.split(/[\n,]+/)) {
