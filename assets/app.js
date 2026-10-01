@@ -511,9 +511,19 @@ async function aiChat(prompt) {
     body: JSON.stringify({ model, temperature: 0.4,
       messages: [{ role: "user", content: prompt }] }),
   });
-  if (!res.ok) throw new Error("API error " + res.status);
+  if (!res.ok) {
+    let detail = "";
+    try { detail = (await res.text()).slice(0, 300); } catch (e) { /* ignore */ }
+    try {
+      const j = JSON.parse(detail);
+      detail = (j.error && j.error.message) || j.message || detail;
+    } catch (e) { /* not JSON, keep raw */ }
+    throw new Error("API error " + res.status + (detail ? ": " + detail : ""));
+  }
   const data = await res.json();
-  return (data.choices[0].message.content || "").trim();
+  const content = data && data.choices && data.choices[0] && data.choices[0].message
+    ? data.choices[0].message.content : "";
+  return (content || "").trim();
 }
 
 const jdContext = () => $("jd-input").value.trim().slice(0, 3000);
@@ -634,7 +644,7 @@ $("file-input").addEventListener("change", async e => {
       msg === "pdf-lib-missing" ? "PDF reader failed to load — check your connection and reload the page." :
       msg === "docx-lib-missing" ? "Word reader failed to load — check your connection and reload the page." :
       msg === "unsupported-type" ? "That file type isn't supported — use PDF, DOCX, or TXT." :
-      "Couldn't parse that file — try pasting the text instead.";
+      `Couldn't parse that file${err && err.name ? " (" + err.name + ")" : ""} — try pasting the text instead.`;
     if (msg !== "pdf-lib-missing" && msg !== "docx-lib-missing") revealPaste();
   }
   e.target.value = "";
