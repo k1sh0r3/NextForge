@@ -5,8 +5,45 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>NextForge — Resume Builder</title>
 <link rel="stylesheet" href="assets/style.css">
-<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.6.0/mammoth.browser.min.js"></script>
+<script>
+/* Load pdf.js + mammoth with CDN fallbacks; exposes window.__libsReady (promise) and window.__pdfWorkerSrc */
+window.__libsReady = (function () {
+  function load(url) {
+    return new Promise(function (res, rej) {
+      var s = document.createElement("script");
+      s.src = url;
+      s.onload = function () { res(true); };
+      s.onerror = function () { rej(new Error("load failed: " + url)); };
+      document.head.appendChild(s);
+    });
+  }
+  async function withFallback(globalName, urls, saveWorker) {
+    for (const u of urls) {
+      try {
+        await load(u);
+        if (window[globalName]) {
+          if (saveWorker) window.__pdfWorkerSrc = u.replace(/pdf(\.min)?\.js$/, "pdf.worker.min.js");
+          return true;
+        }
+      } catch (e) { /* try next CDN */ }
+    }
+    return false;
+  }
+  return (async function () {
+    const pdf = await withFallback("pdfjsLib", [
+      "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js",
+      "https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.min.js",
+      "https://unpkg.com/pdfjs-dist@3.11.174/build/pdf.min.js"
+    ], true);
+    const mam = await withFallback("mammoth", [
+      "https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.9.1/mammoth.browser.min.js",
+      "https://cdn.jsdelivr.net/npm/mammoth@1.9.1/mammoth.browser.min.js",
+      "https://unpkg.com/mammoth@1.9.1/mammoth.browser.min.js"
+    ], false);
+    return { pdf: pdf, mammoth: mam };
+  })();
+})();
+</script>
 </head>
 <body>
 <header class="topbar">
@@ -24,7 +61,7 @@
     <div class="panel">
       <h2><span class="step">1</span> Your resume</h2>
       <label class="upload" id="upload-label">
-        <input type="file" id="file-input" accept=".pdf,.docx,.txt" hidden>
+        <input type="file" id="file-input" class="visually-hidden" accept=".pdf,.docx,.txt" aria-label="Upload resume file">
         <span class="upload-cta">📄 Upload resume <small>PDF / DOCX / TXT</small></span>
       </label>
       <button class="btn link" id="btn-paste-toggle">or paste resume text instead</button>
@@ -52,27 +89,8 @@
       <p class="hint">Analyzes the job description, adds missing skills, and re-scores your resume for ATS.</p>
     </div>
 
-    <div class="panel">
-      <h2><span class="step">3</span> ATS score</h2>
-      <div class="score-wrap">
-        <svg class="ring" viewBox="0 0 120 120">
-          <circle cx="60" cy="60" r="52" class="ring-bg"/>
-          <circle cx="60" cy="60" r="52" class="ring-fg" id="ring-fg"/>
-          <text x="60" y="58" text-anchor="middle" class="ring-num" id="score-num">–</text>
-          <text x="60" y="76" text-anchor="middle" class="ring-sub">ATS</text>
-        </svg>
-        <ul class="breakdown" id="score-breakdown"></ul>
-      </div>
-    </div>
-
-    <div class="panel">
-      <h2>Missing keywords</h2>
-      <p class="hint">Keywords from the job description not found in your resume. Click to add to Skills.</p>
-      <div class="chips" id="missing-chips"><span class="hint">Run the job update to see these.</span></div>
-    </div>
-
-    <details class="panel ai">
-      <summary>✨ AI polish <span class="opt">optional</span></summary>
+    <details class="panel ai" open>
+      <summary><span class="step">3</span> ✨ AI polish <span class="opt">optional</span></summary>
       <p class="hint">Rewrite experience bullets with an LLM. Your key stays in this browser and is only sent to the provider you choose.</p>
       <label class="field">API endpoint
         <input type="text" id="ai-endpoint" value="https://api.openai.com/v1/chat/completions">
@@ -97,6 +115,25 @@
       <p class="hint" id="ai-status"></p>
       <p class="hint">Free option: get a no-cost key at <b>aistudio.google.com</b> → click the “Gemini (free)” preset above.</p>
     </details>
+
+    <div class="panel">
+      <h2><span class="step">4</span> ATS score</h2>
+      <div class="score-wrap">
+        <svg class="ring" viewBox="0 0 120 120">
+          <circle cx="60" cy="60" r="52" class="ring-bg"/>
+          <circle cx="60" cy="60" r="52" class="ring-fg" id="ring-fg"/>
+          <text x="60" y="58" text-anchor="middle" class="ring-num" id="score-num">–</text>
+          <text x="60" y="76" text-anchor="middle" class="ring-sub">ATS</text>
+        </svg>
+        <ul class="breakdown" id="score-breakdown"></ul>
+      </div>
+    </div>
+
+    <div class="panel">
+      <h2>Missing keywords</h2>
+      <p class="hint">Keywords from the job description not found in your resume. Click to add to Skills.</p>
+      <div class="chips" id="missing-chips"><span class="hint">Run the job update to see these.</span></div>
+    </div>
   </section>
 
   <!-- ============ RIGHT: editable resume ============ -->

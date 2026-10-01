@@ -213,3 +213,7 @@ details.ai .opt { font-size: 0.7rem; color: var(--muted); font-weight: 400; bord
   .left { width: auto; flex: none; border-right: none; border-bottom: 1px solid var(--line); }
   #resume-doc { width: 100%; min-height: auto; }
 }
+
+/* accessible hiding: keeps the input focusable/exposed without visual display */
+.visually-hidden{position:absolute!important;width:1px;height:1px;margin:-1px;padding:0;border:0;clip:rect(0 0 0 0);clip-path:inset(50%);overflow:hidden;white-space:nowrap}
+.upload:focus-within{outline:2px solid var(--accent);outline-offset:2px}

@@ -215,16 +215,19 @@ async function readFile(file) {
   const name = file.name.toLowerCase();
   if (name.endsWith(".pdf")) return readPdf(file);
   if (name.endsWith(".docx")) {
+    if (typeof mammoth === "undefined") throw new Error("docx-lib-missing");
     const buf = await file.arrayBuffer();
     const res = await mammoth.extractRawText({ arrayBuffer: buf });
     return res.value;
   }
-  return await file.text(); // .txt
+  if (name.endsWith(".txt") || !name.includes(".")) return await file.text();
+  throw new Error("unsupported-type");
 }
 
 async function readPdf(file) {
+  if (typeof pdfjsLib === "undefined") throw new Error("pdf-lib-missing");
   pdfjsLib.GlobalWorkerOptions.workerSrc =
-    "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
+    window.__pdfWorkerSrc || "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
   const buf = await file.arrayBuffer();
   const pdf = await pdfjsLib.getDocument({ data: buf }).promise;
   let text = "";
@@ -610,14 +613,29 @@ async function aiTailorAll() {
 $("file-input").addEventListener("change", async e => {
   const f = e.target.files[0];
   if (!f) return;
-  $("resume-status").textContent = "Parsing " + f.name + "…";
+  const status = $("resume-status");
+  const revealPaste = () => { $("paste-area").classList.remove("hidden"); $("btn-paste-parse").classList.remove("hidden"); };
+  status.textContent = "Parsing " + f.name + "…";
   try {
+    if (window.__libsReady) await window.__libsReady; // wait for pdf.js/mammoth (with CDN fallbacks)
     const text = await readFile(f);
-    state.resume = parseResumeText(text);
-    renderDoc(); updateScore(); persist();
-    $("resume-status").textContent = `Loaded “${f.name}”. Click any text on the right to fix parsing mistakes.`;
+    if (!text || text.trim().length < 50) {
+      // e.g. scanned/image PDF: don't wipe the current resume, offer paste instead
+      status.textContent = "No readable text found in this file (it may be a scanned image). Paste the text below instead.";
+      revealPaste(); $("paste-area").focus();
+    } else {
+      state.resume = parseResumeText(text);
+      renderDoc(); updateScore(); persist();
+      status.textContent = `Loaded “${f.name}”. Click any text on the right to fix parsing mistakes.`;
+    }
   } catch (err) {
-    $("resume-status").textContent = "Couldn't parse that file — try pasting the text instead.";
+    const msg = (err && err.message) || "";
+    status.textContent =
+      msg === "pdf-lib-missing" ? "PDF reader failed to load — check your connection and reload the page." :
+      msg === "docx-lib-missing" ? "Word reader failed to load — check your connection and reload the page." :
+      msg === "unsupported-type" ? "That file type isn't supported — use PDF, DOCX, or TXT." :
+      "Couldn't parse that file — try pasting the text instead.";
+    if (msg !== "pdf-lib-missing" && msg !== "docx-lib-missing") revealPaste();
   }
   e.target.value = "";
 });
