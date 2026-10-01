@@ -1,4 +1,4 @@
-/* NextForge — resume builder & ATS tailoring. All client-side. */
+/* SeevForge — resume builder & ATS tailoring. All client-side. */
 (function () {
 "use strict";
 
