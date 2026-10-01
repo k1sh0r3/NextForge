@@ -638,7 +638,13 @@ $("btn-load-resume").addEventListener("click", async () => {
   btn.disabled = true;
   status.textContent = "Parsing " + f.name + "…";
   try {
-    if (window.__libsReady) await window.__libsReady; // wait for pdf.js/mammoth (with CDN fallbacks)
+    if (window.__libsReady) {
+      status.textContent = "Loading document reader…";
+      // don't let a stalled CDN hang the button forever
+      const timeout = new Promise(res => setTimeout(() => res("timeout"), 15000));
+      const libs = await Promise.race([window.__libsReady, timeout]);
+      if (libs === "timeout") throw new Error("reader-timeout");
+    }
     const text = await readFile(f);
     if (!text || text.trim().length < 50) {
       // e.g. scanned/image PDF: don't wipe the current resume, offer paste instead
@@ -654,6 +660,7 @@ $("btn-load-resume").addEventListener("click", async () => {
     const msg = (err && err.message) || "";
     status.textContent =
       msg === "pdf-lib-missing" ? "PDF reader failed to load — check your connection and reload the page." :
+      msg === "reader-timeout" ? "The document reader is taking too long to load — your network or ad-blocker may be blocking script CDNs. Reload and retry." :
       msg === "docx-lib-missing" ? "Word reader failed to load — check your connection and reload the page." :
       msg === "unsupported-type" ? "That file type isn't supported — use PDF, DOCX, or TXT." :
       `Couldn't parse that file${err && err.name ? " (" + err.name + ")" : ""} — try pasting the text instead.`;
