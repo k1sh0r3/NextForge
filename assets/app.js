@@ -110,9 +110,9 @@ function hasResume() {
 const DATE_RE = /((?:19|20)\d{2})\s*[–—\-to]+\s*((?:19|20)\d{2}|present|current|now)/i;
 const SEC_NAMES = [
   ["summary", /^(professional\s+)?summary|^(career\s+)?objective|^profile/i],
-  ["experience", /^(work\s+|professional\s+)?experience|employment(\s+history)?|^work\s+history/i],
+  ["experience", /^(work\s+|professional\s+)?experience|^employment(\s+history)?|^work\s+history/i],
   ["education", /^education/i],
-  ["skills", /^(technical\s+)?skills|^technologies|core\s+competencies/i],
+  ["skills", /^(technical\s+)?skills|^technologies|^core\s+competencies/i],
   ["projects", /^projects/i],
 ];
 
@@ -138,14 +138,15 @@ function parseResumeText(text) {
   const linkM = head.match(/(linkedin\.com\/\S+|github\.com\/\S+)/gi);
   if (linkM) r.links = [...new Set(linkM)].join(" · ");
 
-  // --- split into sections ---
+  // --- split into sections (accumulate: multi-page resumes often repeat headers) ---
   const sections = {}; let cur = null, curLines = [];
+  const saveSec = () => { if (cur) sections[cur] = (sections[cur] || []).concat(curLines); };
   for (const line of lines) {
     const sec = line ? detectSection(line) : null;
-    if (sec) { if (cur) sections[cur] = curLines; cur = sec; curLines = []; }
+    if (sec) { saveSec(); cur = sec; curLines = []; }
     else if (cur && line) curLines.push(line);
   }
-  if (cur) sections[cur] = curLines;
+  saveSec();
 
   if (sections.summary) r.summary = sections.summary.join(" ").slice(0, 600);
 
