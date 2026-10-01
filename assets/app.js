@@ -620,11 +620,22 @@ async function aiTailorAll() {
 }
 
 /* ---------------- wiring ---------------- */
-$("file-input").addEventListener("change", async e => {
+let pendingFile = null;
+$("file-input").addEventListener("change", e => {
   const f = e.target.files[0];
+  e.target.value = "";
   if (!f) return;
+  pendingFile = f;
+  $("btn-load-resume").disabled = false;
+  $("resume-status").textContent = `Selected “${f.name}” — click “Load resume” to parse it into the right pane.`;
+});
+$("btn-load-resume").addEventListener("click", async () => {
+  const f = pendingFile;
+  if (!f) return toast("Choose a file with “Upload resume” first.");
+  const btn = $("btn-load-resume");
   const status = $("resume-status");
   const revealPaste = () => { $("paste-area").classList.remove("hidden"); $("btn-paste-parse").classList.remove("hidden"); };
+  btn.disabled = true;
   status.textContent = "Parsing " + f.name + "…";
   try {
     if (window.__libsReady) await window.__libsReady; // wait for pdf.js/mammoth (with CDN fallbacks)
@@ -636,7 +647,8 @@ $("file-input").addEventListener("change", async e => {
     } else {
       state.resume = parseResumeText(text);
       renderDoc(); updateScore(); persist();
-      status.textContent = `Loaded “${f.name}”. Click any text on the right to fix parsing mistakes.`;
+      status.textContent = `Loaded “${f.name}” into the right pane. Click any text there to fix parsing mistakes.`;
+      pendingFile = null;
     }
   } catch (err) {
     const msg = (err && err.message) || "";
@@ -647,7 +659,7 @@ $("file-input").addEventListener("change", async e => {
       `Couldn't parse that file${err && err.name ? " (" + err.name + ")" : ""} — try pasting the text instead.`;
     if (msg !== "pdf-lib-missing" && msg !== "docx-lib-missing") revealPaste();
   }
-  e.target.value = "";
+  btn.disabled = !pendingFile; // failed loads keep the file so you can retry
 });
 
 $("btn-paste-toggle").addEventListener("click", () => {

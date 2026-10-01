@@ -60,10 +60,13 @@ window.__libsReady = (function () {
   <section class="left" id="left-panel">
     <div class="panel">
       <h2><span class="step">1</span> Your resume</h2>
-      <label class="upload" id="upload-label">
-        <input type="file" id="file-input" class="visually-hidden" accept=".pdf,.docx,.txt" aria-label="Upload resume file">
-        <span class="upload-cta">📄 Upload resume <small>PDF / DOCX / TXT</small></span>
-      </label>
+      <div class="upload-row">
+        <label class="upload" id="upload-label">
+          <input type="file" id="file-input" class="visually-hidden" accept=".pdf,.docx,.txt" aria-label="Upload resume file">
+          <span class="upload-cta">📄 Upload resume <small>PDF / DOCX / TXT</small></span>
+        </label>
+        <button class="btn primary" id="btn-load-resume" disabled title="Parse the selected file and show it in the right pane">Load resume →</button>
+      </div>
       <button class="btn link" id="btn-paste-toggle">or paste resume text instead</button>
       <textarea id="paste-area" class="hidden" rows="6" placeholder="Paste your resume text here…"></textarea>
       <button class="btn secondary hidden" id="btn-paste-parse">Parse pasted text</button>
