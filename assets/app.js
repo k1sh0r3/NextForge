@@ -534,7 +534,7 @@ const AI_PRESETS = {
 
 async function aiChat(prompt) {
   const key = $("ai-key").value.trim() || localStorage.getItem("nextforge-ai-key") || "";
-  if (!key) { toast("Enter an API key to use AI polish."); return null; }
+  if (!key) throw new Error("No API key found — paste your key in the AI polish box (step 3).");
   localStorage.setItem("nextforge-ai-key", key);
   $("ai-key").value = "";
   const endpoint = $("ai-endpoint").value.trim() || AI_PRESETS.openai.endpoint;
@@ -563,6 +563,15 @@ async function aiChat(prompt) {
 
 const jdContext = () => $("jd-input").value.trim().slice(0, 3000);
 const aiStatus = msg => { $("ai-status").textContent = msg; };
+// collects per-step failure reasons so the final "Done with issues" line
+// shows WHY each step failed instead of the details being overwritten
+const aiStepErrors = []; // {step, reason} — kept separate so identical reasons dedupe
+function aiFail(step, err) {
+  const reason = (err && err.message) || "unknown error";
+  aiStepErrors.push({ step, reason });
+  aiStatus(step + " failed: " + reason);
+  return false;
+}
 
 async function aiRewriteSummary() {
   aiStatus("Rewriting summary…");
@@ -579,11 +588,15 @@ async function aiRewriteSummary() {
     renderDoc(); persist(); updateScore();
     aiStatus("Summary rewritten — review it on the right.");
     return true;
-  } catch (err) { aiStatus("Summary failed: " + err.message); return false; }
+  } catch (err) { return aiFail("Summary", err); }
 }
 
 async function aiRewriteBullets() {
-  if (!state.resume.experience.length) { toast("No experience entries to polish."); return false; }
+  if (!state.resume.experience.length) {
+    aiStepErrors.push({ step: "Bullets", reason: "no experience entries to polish." });
+    toast("No experience entries to polish.");
+    return false;
+  }
   const jd = jdContext();
   let ok = true;
   for (let i = 0; i < state.resume.experience.length; i++) {
@@ -601,7 +614,7 @@ async function aiRewriteBullets() {
       const lines = out.split("\n")
         .map(l => l.replace(/^[-•*\d.)\s]+/, "").trim()).filter(Boolean);
       if (lines.length) { e.bullets = lines; renderDoc(); }
-    } catch (err) { aiStatus("Bullets failed: " + err.message); ok = false; break; }
+    } catch (err) { aiFail("Bullets", err); ok = false; break; }
   }
   if (ok) aiStatus("Bullets rewritten — review them before exporting.");
   persist(); updateScore();
@@ -634,22 +647,28 @@ async function aiOptimizeSkills() {
       aiStatus(`Skills optimized (${skills.length}).`);
       return true;
     }
+    aiStepErrors.push({ step: "Skills", reason: "the AI returned no usable list." });
     aiStatus("Skills: no usable list returned.");
     return false;
-  } catch (err) { aiStatus("Skills failed: " + err.message); return false; }
+  } catch (err) { return aiFail("Skills", err); }
 }
 
 async function aiTailorAll() {
   if (!$("jd-input").value.trim()) return toast("Paste a job description first.");
   if (!hasResume()) return toast("Load a resume first.");
   aiStatus("AI tailoring full resume…");
+  aiStepErrors.length = 0;
   const results = [];
   results.push(["summary", await aiRewriteSummary()]);
   results.push(["bullets", await aiRewriteBullets()]);
   results.push(["skills", await aiOptimizeSkills()]);
   const failed = results.filter(([, ok]) => !ok).map(([n]) => n);
+  const reasons = [...new Set(aiStepErrors.map(e => e.reason))];
+  const detail = reasons.length <= 1
+    ? (reasons[0] || "")
+    : aiStepErrors.map(e => e.step + ": " + e.reason).join(" ");
   aiStatus(failed.length
-    ? `Done with issues: ${failed.join(", ")} failed.`
+    ? `Done with issues: ${failed.join(", ")} failed.${detail ? " " + detail : ""}`
     : "Full AI tailor complete — review everything on the right.");
   toast(failed.length ? "Some steps failed — see status." : "Resume tailored. Review before exporting.");
 }
