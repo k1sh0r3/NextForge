@@ -43,7 +43,7 @@ const STOPWORDS = new Set(("the,a,an,and,or,for,with,will,our,you,your,we,they,t
 /* ---------------- state ---------------- */
 function blankResume() {
   return { name: "", email: "", phone: "", location: "", links: "",
-           summary: "", experience: [], education: [], skills: [] };
+           summary: "", experience: [], education: [], skills: [], extra: [] };
 }
 const state = {
   resume: blankResume(), jd: "", company: "",
@@ -100,10 +100,12 @@ function resumePlainText() {
   const r = state.resume, parts = [r.name, r.summary, r.skills.join(" ")];
   for (const e of r.experience) parts.push(e.title, e.company, e.bullets.join(" "));
   for (const e of r.education) parts.push(e.degree, e.school);
+  for (const b of (r.extra || [])) parts.push(b.heading, b.text);
   return parts.join(" ");
 }
 function hasResume() {
-  return state.resume.name || state.resume.experience.length || state.resume.skills.length;
+  const r = state.resume;
+  return r.name || r.experience.length || r.skills.length || (r.extra && r.extra.length);
 }
 
 /* ---------------- resume parsing ---------------- */
@@ -114,6 +116,10 @@ const SEC_NAMES = [
   ["education", /^education/i],
   ["skills", /^(technical\s+)?skills|^technologies|^core\s+competencies/i],
   ["projects", /^projects/i],
+  // recognized but kept as free-form "extra" blocks so nothing is ever dropped
+  ["certifications", /^certifications?|^licenses?/i],
+  ["publications", /^publications?/i],
+  ["awards", /^awards?(?!-winning)/i],
 ];
 
 function detectSection(line) {
@@ -157,6 +163,24 @@ function parseResumeText(text) {
       .filter(s => s && s.length > 1 && s.length < 45);
     r.skills = [...new Set(raw)].slice(0, 40);
   }
+
+  // --- catch-all: never silently drop resume content ---
+  // Any detected section we don't structure (projects, certifications, …)
+  // is kept as an editable free-form block, as is any non-contact text
+  // before the first header (e.g. an objective paragraph with no header).
+  const HANDLED = new Set(["summary", "experience", "education", "skills"]);
+  r.extra = [];
+  for (const name of Object.keys(sections)) {
+    if (!HANDLED.has(name) && sections[name].length)
+      r.extra.push({ heading: name, text: sections[name].join("\n").slice(0, 4000) });
+  }
+  const secIdx = lines.findIndex(l => l && detectSection(l));
+  const preLines = lines.slice(0, secIdx === -1 ? lines.length : secIdx)
+    .map(l => l.trim()).filter(Boolean);
+  const isContact = (l, i) => i === 0 || /[\w.+-]+@[\w-]+\.[\w.]+/.test(l) ||
+    /\(?\+?\d[\d\s().-]{7,}\d/.test(l) || /linkedin\.com|github\.com|https?:\/\//i.test(l);
+  const preText = preLines.filter((l, i) => !isContact(l, i)).join("\n").slice(0, 4000);
+  if (preText.trim()) r.extra.unshift({ heading: "", text: preText });
   return r;
 }
 
@@ -293,6 +317,15 @@ function renderDoc() {
     ).join("") +
     `<span class="skill-add"><input id="skill-input" placeholder="+ add skill" maxlength="40"><button id="skill-add-btn">Add</button></span></div>`;
 
+  // free-form blocks: everything the parser couldn't structure (projects,
+  // certifications, header-less resumes…) — kept verbatim, fully editable
+  (r.extra || []).forEach((b, i) => {
+    const label = b.heading ? b.heading.charAt(0).toUpperCase() + b.heading.slice(1) : "Additional content";
+    h += `<h2 class="rsec">${esc(label)}</h2><div class="r-entry" data-extra="${i}">` +
+      `<button class="entry-x" data-del-extra="${i}" title="Remove section">×</button>` +
+      `<div class="r-extra" contenteditable="true" spellcheck="false" data-path="extra.${i}.text" data-ph="click to edit">${esc(b.text).replace(/\n/g, "<br>")}</div></div>`;
+  });
+
   doc.innerHTML = h;
 }
 
@@ -325,11 +358,12 @@ doc.addEventListener("input", e => {
 // structural edits (re-render)
 doc.addEventListener("click", e => {
   const t = e.target;
-  const delExp = t.dataset.delExp, delEdu = t.dataset.delEdu, delSk = t.dataset.delSkill;
+  const delExp = t.dataset.delExp, delEdu = t.dataset.delEdu, delSk = t.dataset.delSkill, delEx = t.dataset.delExtra;
   const addB = t.dataset.addBullet;
   if (delExp !== undefined) { state.resume.experience.splice(+delExp, 1); renderDoc(); persist(); updateScore(); }
   else if (delEdu !== undefined) { state.resume.education.splice(+delEdu, 1); renderDoc(); persist(); updateScore(); }
   else if (delSk !== undefined) { state.resume.skills.splice(+delSk, 1); renderDoc(); persist(); updateScore(); }
+  else if (delEx !== undefined) { (state.resume.extra || []).splice(+delEx, 1); renderDoc(); persist(); updateScore(); }
   else if (addB !== undefined) { state.resume.experience[+addB].bullets.push(""); renderDoc(); persist(); }
   else if (t.id === "skill-add-btn") addSkillFromInput();
 });
@@ -670,10 +704,6 @@ $("btn-load-resume").addEventListener("click", async () => {
   btn.disabled = !pendingFile; // failed loads keep the file so you can retry
 });
 
-$("btn-paste-toggle").addEventListener("click", () => {
-  $("paste-area").classList.toggle("hidden");
-  $("btn-paste-parse").classList.toggle("hidden");
-});
 $("btn-paste-parse").addEventListener("click", () => {
   const t = $("paste-area").value.trim();
   if (!t) return toast("Paste your resume text first.");

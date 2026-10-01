@@ -147,6 +147,7 @@ details.ai .opt { font-size: 0.7rem; color: var(--muted); font-weight: 400; bord
 #resume-doc ul.r-bullets { margin: 4px 0 6px; padding-left: 18px; }
 #resume-doc ul.r-bullets li { margin-bottom: 3px; }
 #resume-doc .r-skills { margin: 2px 0 6px; }
+#resume-doc .r-extra { font-size: 10.5pt; line-height: 1.5; white-space: pre-wrap; }
 #resume-doc [contenteditable="true"]:empty::before {
   content: attr(data-ph); color: #999; font-style: italic;
 }
