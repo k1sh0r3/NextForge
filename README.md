@@ -1,1 +1,1 @@
-# NextForge
+__NF_README__
