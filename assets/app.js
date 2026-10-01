@@ -494,48 +494,116 @@ const AI_PRESETS = {
   groq:   { endpoint: "https://api.groq.com/openai/v1/chat/completions", model: "llama-3.3-70b-versatile" },
 };
 
-async function aiPolish() {
-  let key = $("ai-key").value.trim() || localStorage.getItem("nextforge-ai-key") || "";
-  if (!key) return toast("Enter an API key to use AI polish.");
+async function aiChat(prompt) {
+  const key = $("ai-key").value.trim() || localStorage.getItem("nextforge-ai-key") || "";
+  if (!key) { toast("Enter an API key to use AI polish."); return null; }
   localStorage.setItem("nextforge-ai-key", key);
   $("ai-key").value = "";
-  const endpoint = ($("ai-endpoint").value.trim() || AI_PRESETS.openai.endpoint);
+  const endpoint = $("ai-endpoint").value.trim() || AI_PRESETS.openai.endpoint;
   localStorage.setItem("nextforge-ai-endpoint", endpoint);
   const model = $("ai-model").value.trim() || "gpt-4o-mini";
-  const jd = $("jd-input").value.trim();
-  if (!state.resume.experience.length) return toast("No experience entries to polish.");
-  const status = $("ai-status");
-  status.textContent = "Polishing…";
+  const res = await fetch(endpoint, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "Authorization": "Bearer " + key },
+    body: JSON.stringify({ model, temperature: 0.4,
+      messages: [{ role: "user", content: prompt }] }),
+  });
+  if (!res.ok) throw new Error("API error " + res.status);
+  const data = await res.json();
+  return (data.choices[0].message.content || "").trim();
+}
 
+const jdContext = () => $("jd-input").value.trim().slice(0, 3000);
+const aiStatus = msg => { $("ai-status").textContent = msg; };
+
+async function aiRewriteSummary() {
+  aiStatus("Rewriting summary…");
+  const prompt =
+    `Rewrite this professional summary for a resume so it targets the job description below. ` +
+    `Keep it to 2-3 lines, no first-person pronouns, lead with the strongest matching qualifications. ` +
+    `Return ONLY the rewritten summary, no quotes, no extra text.\n\n` +
+    `CURRENT SUMMARY:\n${state.resume.summary || "(none)"}\n\n` +
+    `JOB DESCRIPTION:\n${jdContext()}`;
+  try {
+    const out = await aiChat(prompt);
+    if (out == null) return false;
+    state.resume.summary = out.replace(/^["'“”]+|["'“”]+$/g, "").slice(0, 600);
+    renderDoc(); persist(); updateScore();
+    aiStatus("Summary rewritten — review it on the right.");
+    return true;
+  } catch (err) { aiStatus("Summary failed: " + err.message); return false; }
+}
+
+async function aiRewriteBullets() {
+  if (!state.resume.experience.length) { toast("No experience entries to polish."); return false; }
+  const jd = jdContext();
+  let ok = true;
   for (let i = 0; i < state.resume.experience.length; i++) {
     const e = state.resume.experience[i];
     if (!e.bullets.filter(b => b.trim()).length) continue;
-    status.textContent = `Polishing ${i + 1}/${state.resume.experience.length}…`;
+    aiStatus(`Rewriting bullets ${i + 1}/${state.resume.experience.length}…`);
     const prompt =
       `Rewrite these resume bullets for a ${e.title} to be concise, start with strong action verbs, ` +
       `include metrics where plausible, and align with this job description. ` +
       `Return ONLY the rewritten bullets, one per line, no numbering, no extra text.\n\n` +
-      `BULLETS:\n${e.bullets.join("\n")}\n\nJOB DESCRIPTION:\n${jd.slice(0, 3000)}`;
+      `BULLETS:\n${e.bullets.join("\n")}\n\nJOB DESCRIPTION:\n${jd}`;
     try {
-      const res = await fetch(endpoint, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", "Authorization": "Bearer " + key },
-        body: JSON.stringify({ model, temperature: 0.4,
-          messages: [{ role: "user", content: prompt }] }),
-      });
-      if (!res.ok) throw new Error("API error " + res.status);
-      const data = await res.json();
-      const lines = (data.choices[0].message.content || "").split("\n")
+      const out = await aiChat(prompt);
+      if (out == null) return false;
+      const lines = out.split("\n")
         .map(l => l.replace(/^[-•*\d.)\s]+/, "").trim()).filter(Boolean);
       if (lines.length) { e.bullets = lines; renderDoc(); }
-    } catch (err) {
-      status.textContent = "Failed: " + err.message;
-      return toast("AI polish failed: " + err.message);
-    }
+    } catch (err) { aiStatus("Bullets failed: " + err.message); ok = false; break; }
   }
-  status.textContent = "Done — review the rewritten bullets.";
+  if (ok) aiStatus("Bullets rewritten — review them before exporting.");
   persist(); updateScore();
-  toast("Bullets polished. Review them before exporting.");
+  return ok;
+}
+
+async function aiOptimizeSkills() {
+  aiStatus("Optimizing skills…");
+  const prompt =
+    `Given this candidate's current skills and the job description, produce an optimized skills list: ` +
+    `keep the candidate's real skills that are most relevant to the job first, then add closely-related ` +
+    `skills from the job description the candidate likely has. Do not invent senior-level expertise the ` +
+    `candidate lacks. Return ONLY a comma-separated list, max 20 skills, no extra text.\n\n` +
+    `CURRENT SKILLS:\n${state.resume.skills.join(", ")}\n\n` +
+    `JOB DESCRIPTION:\n${jdContext()}`;
+  try {
+    const out = await aiChat(prompt);
+    if (out == null) return false;
+    const seen = new Set(), skills = [];
+    for (const raw of out.split(/[\n,]+/)) {
+      const s = raw.replace(/^[-•*\d.)\s]+/, "").trim();
+      if (!s || s.length < 2 || s.length > 45) continue;
+      const k = s.toLowerCase();
+      if (!seen.has(k)) { seen.add(k); skills.push(s); }
+      if (skills.length >= 20) break;
+    }
+    if (skills.length) {
+      state.resume.skills = skills;
+      renderDoc(); persist(); updateScore();
+      aiStatus(`Skills optimized (${skills.length}).`);
+      return true;
+    }
+    aiStatus("Skills: no usable list returned.");
+    return false;
+  } catch (err) { aiStatus("Skills failed: " + err.message); return false; }
+}
+
+async function aiTailorAll() {
+  if (!$("jd-input").value.trim()) return toast("Paste a job description first.");
+  if (!hasResume()) return toast("Load a resume first.");
+  aiStatus("AI tailoring full resume…");
+  const results = [];
+  results.push(["summary", await aiRewriteSummary()]);
+  results.push(["bullets", await aiRewriteBullets()]);
+  results.push(["skills", await aiOptimizeSkills()]);
+  const failed = results.filter(([, ok]) => !ok).map(([n]) => n);
+  aiStatus(failed.length
+    ? `Done with issues: ${failed.join(", ")} failed.`
+    : "Full AI tailor complete — review everything on the right.");
+  toast(failed.length ? "Some steps failed — see status." : "Resume tailored. Review before exporting.");
 }
 
 /* ---------------- wiring ---------------- */
@@ -595,7 +663,10 @@ $("btn-add-skill").addEventListener("click", () => {
     renderDoc(); persist(); updateScore();
   }
 });
-$("btn-ai-polish").addEventListener("click", aiPolish);
+$("btn-ai-all").addEventListener("click", aiTailorAll);
+$("btn-ai-summary").addEventListener("click", aiRewriteSummary);
+$("btn-ai-bullets").addEventListener("click", aiRewriteBullets);
+$("btn-ai-skills").addEventListener("click", aiOptimizeSkills);
 document.querySelectorAll("[data-preset]").forEach(b => b.addEventListener("click", () => {
   const p = AI_PRESETS[b.dataset.preset];
   if (!p) return;
@@ -618,6 +689,7 @@ $("company-input").addEventListener("input", persistSoon);
   updateScore();
   if (had) $("resume-status").textContent = "Restored your saved resume.";
 /* test/debug hook (harmless in production) */
-window.__nf = { state, analyzeJD, computeScore, parseResumeText, tailor, renderDoc, updateScore };
+window.__nf = { state, analyzeJD, computeScore, parseResumeText, tailor, renderDoc, updateScore,
+  aiRewriteSummary, aiRewriteBullets, aiOptimizeSkills, aiTailorAll };
 })();
 })();
