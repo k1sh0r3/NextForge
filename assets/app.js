@@ -488,11 +488,19 @@ window.addEventListener("beforeprint", () => {
 });
 
 /* ---------------- optional AI polish (bring your own key) ---------------- */
+const AI_PRESETS = {
+  openai: { endpoint: "https://api.openai.com/v1/chat/completions", model: "gpt-4o-mini" },
+  gemini: { endpoint: "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions", model: "gemini-2.5-flash" },
+  groq:   { endpoint: "https://api.groq.com/openai/v1/chat/completions", model: "llama-3.3-70b-versatile" },
+};
+
 async function aiPolish() {
   let key = $("ai-key").value.trim() || localStorage.getItem("nextforge-ai-key") || "";
   if (!key) return toast("Enter an API key to use AI polish.");
   localStorage.setItem("nextforge-ai-key", key);
   $("ai-key").value = "";
+  const endpoint = ($("ai-endpoint").value.trim() || AI_PRESETS.openai.endpoint);
+  localStorage.setItem("nextforge-ai-endpoint", endpoint);
   const model = $("ai-model").value.trim() || "gpt-4o-mini";
   const jd = $("jd-input").value.trim();
   if (!state.resume.experience.length) return toast("No experience entries to polish.");
@@ -509,7 +517,7 @@ async function aiPolish() {
       `Return ONLY the rewritten bullets, one per line, no numbering, no extra text.\n\n` +
       `BULLETS:\n${e.bullets.join("\n")}\n\nJOB DESCRIPTION:\n${jd.slice(0, 3000)}`;
     try {
-      const res = await fetch("https://api.openai.com/v1/chat/completions", {
+      const res = await fetch(endpoint, {
         method: "POST",
         headers: { "Content-Type": "application/json", "Authorization": "Bearer " + key },
         body: JSON.stringify({ model, temperature: 0.4,
@@ -588,6 +596,14 @@ $("btn-add-skill").addEventListener("click", () => {
   }
 });
 $("btn-ai-polish").addEventListener("click", aiPolish);
+document.querySelectorAll("[data-preset]").forEach(b => b.addEventListener("click", () => {
+  const p = AI_PRESETS[b.dataset.preset];
+  if (!p) return;
+  $("ai-endpoint").value = p.endpoint;
+  $("ai-model").value = p.model;
+  localStorage.setItem("nextforge-ai-endpoint", p.endpoint);
+  toast(`Preset: ${b.dataset.preset} — now paste your API key.`);
+}));
 $("jd-input").addEventListener("input", persistSoon);
 $("company-input").addEventListener("input", persistSoon);
 
@@ -595,6 +611,8 @@ $("company-input").addEventListener("input", persistSoon);
 (function init() {
   const savedKey = localStorage.getItem("nextforge-ai-key");
   if (savedKey) $("ai-key").placeholder = "key saved ✓ (enter a new one to replace)";
+  const savedEp = localStorage.getItem("nextforge-ai-endpoint");
+  if (savedEp) $("ai-endpoint").value = savedEp;
   const had = restore();
   renderDoc();
   updateScore();

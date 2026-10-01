@@ -74,14 +74,23 @@
     <details class="panel ai">
       <summary>✨ AI polish <span class="opt">optional</span></summary>
       <p class="hint">Rewrite experience bullets with an LLM. Your key stays in this browser and is only sent to the provider you choose.</p>
+      <label class="field">API endpoint
+        <input type="text" id="ai-endpoint" value="https://api.openai.com/v1/chat/completions">
+      </label>
+      <div class="presets">
+        <button class="btn xs" data-preset="openai">OpenAI</button>
+        <button class="btn xs" data-preset="gemini">Gemini (free)</button>
+        <button class="btn xs" data-preset="groq">Groq (free)</button>
+      </div>
       <label class="field">API key
-        <input type="password" id="ai-key" placeholder="sk-…" autocomplete="off">
+        <input type="password" id="ai-key" placeholder="paste key…" autocomplete="off">
       </label>
       <label class="field">Model
         <input type="text" id="ai-model" value="gpt-4o-mini">
       </label>
       <button class="btn secondary" id="btn-ai-polish">Polish my bullets</button>
       <p class="hint" id="ai-status"></p>
+      <p class="hint">Free option: get a no-cost key at <b>aistudio.google.com</b> → click the “Gemini (free)” preset above.</p>
     </details>
   </section>
 

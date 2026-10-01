@@ -37,6 +37,7 @@ body {
 .btn.ghost:hover { color: var(--text); }
 .btn.link { background: none; border: none; color: var(--accent); padding: 4px 0; font-weight: 500; }
 .btn.xs { padding: 5px 10px; font-size: 0.75rem; }
+.presets { display: flex; gap: 6px; margin: 2px 0 8px; }
 .btn:disabled { opacity: 0.5; cursor: not-allowed; }
 
 /* ---------- split layout ---------- */
