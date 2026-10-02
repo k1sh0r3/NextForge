@@ -112,13 +112,13 @@ function hasResume() {
 const _MON = "(?:jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:t(?:ember)?)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)\\.?";
 const _YR = "(?:19|20)\\d{2}";
 const _DT = "(?:" + _MON + "\\s+" + _YR + "|" + _YR + "|\\d{1,2}/" + _YR + ")";
-const DATE_RE = new RegExp("(" + _DT + ")\\s*(?:[–—\\-|/]+|\\bto\\b)\\s*(" + _DT + "|present|current|now)", "i");
+const DATE_RE = new RegExp("(" + _DT + ")\\s*(?:[–—\\-|/]+|\\bto\\b)\\s*(" + _DT + "|present|current|now|presente|hoy|actualidad)\\b", "i");
 const SEC_NAMES = [
   ["summary", /^(professional\s+)?summary|^(career\s+)?objective|^profile/i],
-  ["experience", /^(work\s+|professional\s+)?experience|^employment(\s+history)?|^work\s+history/i],
+  ["experience", /^(work\s+|professional\s+)?experience|^employment(\s+history)?|^work\s+history|^career\s+history|^where\s+i['’]ve\s+worked/i],
   ["education", /^education/i],
-  ["skills", /^(technical\s+)?skills|^technologies|^core\s+competencies/i],
-  ["projects", /^projects/i],
+  ["skills", /^(technical\s+)?skills|^technologies|^core\s+competencies|^technical\s+toolbox/i],
+  ["projects", /^projects|^what\s+i['’]ve\s+(shipped|built)/i],
   // recognized but kept as free-form "extra" blocks so nothing is ever dropped
   ["certifications", /^certifications?|^licenses?/i],
   ["publications", /^publications?/i],
@@ -126,8 +126,10 @@ const SEC_NAMES = [
 ];
 
 function detectSection(line) {
-  // strip trailing colons and leading numbering ("1. Education") before matching
-  const t = line.replace(/[:\s]+$/, "").replace(/^\d+[.)]\s*/, "").trim();
+  // strip trailing colons, leading numbering ("1. Education") and leading
+  // emoji ("💼 Experience") before matching
+  const t = line.replace(/[:\s]+$/, "").replace(/^\d+[.)]\s*/, "")
+    .replace(/^(\p{Extended_Pictographic}|\uFE0F|\u200D|\u20E3)+/u, "").trim();
   if (t.length > 40) return null;
   for (const [name, re] of SEC_NAMES) if (re.test(t)) return name;
   return null;
@@ -135,23 +137,26 @@ function detectSection(line) {
 
 function parseResumeText(text) {
   const r = blankResume();
-  const lines = text.split(/\r?\n/).map(l => l.trim());
+  const lines = String(text == null ? "" : text).split(/\r?\n/).map(l => l.trim());
   const nonEmpty = lines.filter(l => l.length);
 
   // --- contact block: first ~8 lines ---
   const head = nonEmpty.slice(0, 8).join("\n");
-  const emailM = head.match(/[\w.+-]+@[\w-]+\.[\w.]+/);
+  // NOTE: quantifiers are deliberately bounded ({1,100}) — unbounded [\w.+-]+@
+  // backtracks O(n^2) and hangs the tab on very long non-email lines
+  const emailM = head.match(/[\w.+-]{1,100}@[\w-]{1,100}\.[\w.]{1,100}/);
   if (emailM) r.email = emailM[0];
-  const phoneM = head.match(/(\+?1[\s.-]?)?(\(?\d{3}\)?[\s.-]?\d{3}[\s.-]?\d{4})/);
+  const phoneM = head.match(/(\+?1[\s.-]?)?(\(?\d{3}\)?[\s.-]?\d{3}[\s.-]?\d{4})/) ||
+                 head.match(/\+\d[\d\s().-]{6,32}\d/); // international: +44 20 7946 0958, +91 98200 12345
   if (phoneM) r.phone = phoneM[0];
-  if (nonEmpty.length) r.name = nonEmpty[0].slice(0, 60);
-  const linkM = head.match(/(linkedin\.com\/\S+|github\.com\/\S+)/gi);
-  if (linkM) r.links = [...new Set(linkM)].join(" · ");
-  // location like "City, ST" / "City, State" — on its own line or a |/·-separated segment
+  if (nonEmpty.length) r.name = nonEmpty[0].replace(/^(name|full\s+name)\s*:\s*/i, "").slice(0, 60);
+  const linkM = head.match(/(linkedin\.com\/\S+|github\.com\/\S+|https?:\/\/\S+)/gi);
+  if (linkM) r.links = [...new Set(linkM.map(u => u.replace(/[.,;)]+$/, "")))].join(" · ");
+  // location like "City, ST" / "City, State" — on its own line or a |/·/tab-separated segment
   const locCands = [];
-  nonEmpty.slice(1, 8).forEach(l => l.split(/[|·]/).forEach(s => locCands.push(s.trim())));
+  nonEmpty.slice(1, 8).forEach(l => l.split(/[|·\t]|\s{2,}/).forEach(s => locCands.push(s.trim())));
   const locM = locCands.find(s =>
-    /^[A-Za-z][A-Za-z.'\- ]*,\s*[A-Za-z.'\- ]+$/.test(s) && s.length <= 40 &&
+    /^[\p{L}][\p{L}.'\- ]*,\s*[\p{L}.'\- ]+$/u.test(s) && s.length <= 40 &&
     !/[@\d]/.test(s) && !/https?:|linkedin|github/i.test(s));
   if (locM) r.location = locM.slice(0, 60);
 
@@ -177,7 +182,8 @@ function parseResumeText(text) {
     /\(?\+?\d[\d\s().-]{7,}\d/.test(l) || /linkedin\.com|github\.com|https?:\/\//i.test(l) ||
     (r.location && l === r.location);
   if (!Object.keys(sections).length) {
-    const body = lines.filter((l, i) => l && !_isC(l, i));
+    // note: nonEmpty (not lines) so index 0 is really the name line
+    const body = nonEmpty.filter((l, i) => !_isC(l, i));
     if (body.filter(l => DATE_RE.test(l)).length >= 2) sections.experience = body;
   }
 
@@ -188,10 +194,10 @@ function parseResumeText(text) {
   if (sections.skills) {
     const seen = new Set(), out = [];
     for (const ln of sections.skills.join("\n").split("\n")) {
-      // strip bullet/number prefixes ("- Python", "1. SQL")
-      const clean = ln.replace(/^[\s•\-\*▪‣◦–—]+|^\d+[.)]\s*/, "").trim();
+      // strip bullet/number prefixes ("- Python", "1. SQL", "(1) SQL")
+      const clean = ln.replace(/^[\s•\-\*▪‣◦–—]+|^\(\d+\)\s*|^\d+[.)]\s*/, "").trim();
       if (!clean) continue;
-      for (const s of clean.split(/[,;|/·]/)) {
+      for (const s of clean.split(/[,;|/·\t]|\s{2,}/)) {
         const t = s.trim(), k = t.toLowerCase();
         if (t && t.length > 1 && t.length < 45 && !seen.has(k)) { seen.add(k); out.push(t); }
       }
@@ -212,8 +218,12 @@ function parseResumeText(text) {
   const secIdx = lines.findIndex(l => l && detectSection(l));
   const preLines = lines.slice(0, secIdx === -1 ? lines.length : secIdx)
     .map(l => l.trim()).filter(Boolean);
-  const isContact = (l, i) => i === 0 || /[\w.+-]+@[\w-]+\.[\w.]+/.test(l) ||
-    /\(?\+?\d[\d\s().-]{7,}\d/.test(l) || /linkedin\.com|github\.com|https?:\/\//i.test(l) ||
+  // if the name line was truncated (>60 chars) its remainder still counts as
+  // content — don't let the contact filter swallow it
+  const nameTruncated = nonEmpty.length > 0 && nonEmpty[0].length > 60;
+  const isContact = (l, i) => (i === 0 && !nameTruncated) || /[\w.+-]{1,100}@[\w-]{1,100}\.[\w.]{1,100}/.test(l) ||
+    /(?<!\d)(\+\d[\d\s().-]{6,32}\d|\(?\d{3}\)?[\s.-]?\d{3}[\s.-]?\d{4})(?!\d)/.test(l) ||
+    /linkedin\.com|github\.com|https?:\/\//i.test(l) ||
     (r.location && l === r.location);
   // skip the pre-header catch-all when the no-header fallback already
   // structured the body as experience (avoids duplicating it in extra)
@@ -224,11 +234,11 @@ function parseResumeText(text) {
   return r;
 }
 
-const BULLET_RE = /^(?:[•\-\*▪‣◦–—]|\d+[.)])/;
+const BULLET_RE = /^(?:[•\-\*▪‣◦–—]|\(\d+\)|\d+[.)])/;
 function parseExperience(lines) {
   const entries = []; let cur = [];
   const isBullet = l => BULLET_RE.test(l);
-  const stripBullet = l => l.replace(/^(?:[•\-\*▪‣◦–—]|\d+[.)])\s*/, "");
+  const stripBullet = l => l.replace(/^(?:[•\-\*▪‣◦–—]|\(\d+\)|\d+[.)])\s*/, "");
   const gHasDate = g => g.some(l => DATE_RE.test(l));
   const gHasBullet = g => g.some(isBullet);
   // a title-ish line: short, starts uppercase/digit, no trailing sentence punctuation
@@ -254,10 +264,12 @@ function parseExperience(lines) {
         dates = dm[0];
         const rest = line.replace(dm[0], "").replace(/^[|,–—\-\s]+|[|,–—\-\s]+$/g, "").trim();
         if (rest) {
-          // single-line "Title, Company [, dates]" — split it up
-          const parts = rest.split(/\s*[,|]\s*/).filter(Boolean);
+          // single-line "Title, Company [, dates]" — split it up (tabs and wide
+          // spacing from table-pastes count as separators too)
+          const parts = rest.split(/\s*[,|\t]\s*|\s{2,}/).filter(Boolean);
           if (!title && parts.length > 1) { title = parts[0]; company = parts.slice(1).join(", "); }
           else if (!company) company = rest;
+          else bullets.push(rest); // never silently drop leftover text
         }
         continue;
       }
@@ -590,7 +602,7 @@ window.addEventListener("beforeprint", () => {
 const AI_PRESETS = {
   openai: { endpoint: "https://api.openai.com/v1/chat/completions", model: "gpt-4o-mini" },
   gemini: { endpoint: "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions", model: "gemini-3.8-flash" },
-  groq:   { endpoint: "https://api.groq.com/openai/v1/chat/completions", model: "llama-3.3-70b-versatile" },
+  groq:   { endpoint: "https://api.groq.com/openai/v1/chat/completions", model: "openai/gpt-oss-120b" },
 };
 
 async function aiChat(prompt, step) {
