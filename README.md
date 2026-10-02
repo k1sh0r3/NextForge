@@ -18,8 +18,10 @@ description, and get a tailored, ATS-scored resume you can edit in the browser a
   bullets, skills depth, length). Layouts are single-column and ATS-safe by design.
 - **Export PDF:** prints only the resume with real selectable text (ATS-parseable), via the
   browser's *Save as PDF*.
-- **Extras:** 3 templates, localStorage autosave, optional AI bullet rewriting (bring your own
-  OpenAI-compatible API key — stored only in your browser).
+- **Extras:** 3 templates, localStorage autosave, optional AI tailoring (rewrites the
+  professional summary, experience bullets, and skills/tech stack against the JD —
+  presets for OpenAI / free Gemini / free Groq; bring your own key, stored only in
+  your browser).
 
 ## Project layout
 
